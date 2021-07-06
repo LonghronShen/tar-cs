@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace tar_cs
@@ -10,11 +11,13 @@ namespace tar_cs
     /// Extract contents of a tar file represented by a stream for the TarReader constructor
     /// </summary>
     public class TarReader
+        : IDisposable
     {
         private readonly byte[] dataBuffer = new byte[512];
         private readonly UsTarHeader header;
         private readonly Stream inStream;
         private long remainingBytesInFile;
+        private bool disposedValue;
 
         /// <summary>
         /// Constructs TarReader object to read data from `tarredData` stream
@@ -48,7 +51,7 @@ namespace tar_cs
             {
                 string fileNameFromArchive = FileInfo.FileName;
                 string totalPath = destDirectory + Path.DirectorySeparatorChar + fileNameFromArchive;
-                if(UsTarHeader.IsPathSeparator(fileNameFromArchive[fileNameFromArchive.Length -1]) || FileInfo.EntryType == EntryType.Directory)
+                if (UsTarHeader.IsPathSeparator(fileNameFromArchive[fileNameFromArchive.Length - 1]) || FileInfo.EntryType == EntryType.Directory)
                 {
                     // Record is a directory
                     Directory.CreateDirectory(totalPath);
@@ -64,7 +67,40 @@ namespace tar_cs
                 }
             }
         }
-        
+
+        public async Task ForEachAsync(Func<bool, string, Func<Stream, Task>, Task<bool>> processor)
+        {
+            async Task<bool> LocalProcessAsync(bool isDirectory, string path, Func<Stream, Task> streamWriter)
+            {
+                if (processor == null)
+                {
+                    return false;
+                }
+                return await processor(isDirectory, path, streamWriter);
+            }
+
+            while (await MoveNextAsync(false))
+            {
+                string fileNameFromArchive = FileInfo.FileName;
+                if (UsTarHeader.IsPathSeparator(fileNameFromArchive[fileNameFromArchive.Length - 1]) ||
+                    FileInfo.EntryType == EntryType.Directory)
+                {
+                    // Record is a directory
+                    if (!await LocalProcessAsync(true, fileNameFromArchive, null))
+                    {
+                        return;
+                    }
+                    continue;
+                }
+                // If record is a file
+                if (!await LocalProcessAsync(false, fileNameFromArchive,
+                    async (s) => await this.ReadAsync(s)))
+                {
+                    return;
+                }
+            }
+        }
+
         /// <summary>
         /// Read data from a current file to a Stream.
         /// </summary>
@@ -90,15 +126,14 @@ namespace tar_cs
                 throw new ArgumentNullException(nameof(buffer));
             }
 
-            if(remainingBytesInFile == 0)
+            if (remainingBytesInFile == 0)
             {
-                buffer = null;
                 return -1;
             }
             int align512 = -1;
             long toRead = remainingBytesInFile - 512;
 
-            if (toRead > 0) 
+            if (toRead > 0)
                 toRead = 512;
             else
             {
@@ -106,17 +141,17 @@ namespace tar_cs
                 toRead = remainingBytesInFile;
             }
 
-            int bytesRead = 0;
             long bytesRemainingToRead = toRead;
+
+            int bytesRead;
             do
             {
-
-                bytesRead = await inStream.ReadAsync(buffer, (int)(toRead-bytesRemainingToRead), (int)bytesRemainingToRead);
+                bytesRead = await inStream.ReadAsync(buffer, (int)(toRead - bytesRemainingToRead), (int)bytesRemainingToRead);
                 bytesRemainingToRead -= bytesRead;
                 remainingBytesInFile -= bytesRead;
             } while (bytesRead < toRead && bytesRemainingToRead > 0);
-            
-            if(inStream.CanSeek && align512 > 0)
+
+            if (inStream.CanSeek && align512 > 0)
             {
                 inStream.Seek(align512, SeekOrigin.Current);
             }
@@ -128,7 +163,7 @@ namespace tar_cs
                     --align512;
                 }
             }
-            
+
             return bytesRead;
         }
 
@@ -139,11 +174,7 @@ namespace tar_cs
         /// <returns>true if all bytes are zeroes, otherwise false</returns>
         private static bool IsEmpty(IEnumerable<byte> buffer)
         {
-            foreach(byte b in buffer)
-            {
-                if (b != 0) return false;
-            }
-            return true;
+            return !buffer.Any(x => x != 0);
         }
 
         /// <summary>
@@ -171,8 +202,8 @@ namespace tar_cs
                 // Skip to the end of file.
                 if (inStream.CanSeek)
                 {
-                    long remainer = (remainingBytesInFile%512);
-                    inStream.Seek(remainingBytesInFile + (512 - (remainer == 0 ? 512 : remainer) ), SeekOrigin.Current);
+                    long remainer = (remainingBytesInFile % 512);
+                    inStream.Seek(remainingBytesInFile + (512 - (remainer == 0 ? 512 : remainer)), SeekOrigin.Current);
                 }
                 else
                 {
@@ -195,7 +226,7 @@ namespace tar_cs
                 }
             } while (bytesRemaining > 0);
 
-            if(IsEmpty(bytes))
+            if (IsEmpty(bytes))
             {
                 bytesRemaining = header.HeaderSize;
                 do
@@ -206,7 +237,7 @@ namespace tar_cs
                     {
                         throw new TarException("Broken archive");
                     }
-                    
+
                 } while (bytesRemaining > 0);
                 if (bytesRemaining == 0 && IsEmpty(bytes))
                 {
@@ -226,5 +257,37 @@ namespace tar_cs
             Debug.WriteLine("tar stream position MoveNext  out(true): " + inStream.Position);
             return true;
         }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                if (disposing)
+                {
+                    // TODO: dispose managed state (managed objects)
+                    this.inStream?.Dispose();
+                }
+
+                // TODO: free unmanaged resources (unmanaged objects) and override finalizer
+                // TODO: set large fields to null
+                disposedValue = true;
+            }
+        }
+
+        // // TODO: override finalizer only if 'Dispose(bool disposing)' has code to free unmanaged resources
+        // ~TarReader()
+        // {
+        //     // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+        //     Dispose(disposing: false);
+        // }
+
+        public void Dispose()
+        {
+            // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
+
     }
+
 }

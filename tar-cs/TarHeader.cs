@@ -28,11 +28,11 @@ namespace tar_cs
         {
             get
             {
-                return fileName.Replace("\0",string.Empty);
-            } 
+                return fileName.Replace("\0", string.Empty);
+            }
             set
             {
-                if(value.Length > 100)
+                if (value.Length > 100)
                 {
                     throw new TarException("A file name can not be more than 100 chars long");
                 }
@@ -113,19 +113,19 @@ namespace tar_cs
 
             EntryType = (EntryType)buffer[156];
 
-            if((buffer[124] & 0x80) == 0x80) // if size in binary
+            if ((buffer[124] & 0x80) == 0x80) // if size in binary
             {
-                long sizeBigEndian = BitConverter.ToInt64(buffer,0x80);
+                long sizeBigEndian = BitConverter.ToInt64(buffer, 0x80);
                 SizeInBytes = IPAddress.NetworkToHostOrder(sizeBigEndian);
             }
             else
             {
                 SizeInBytes = Convert.ToInt64(Encoding.ASCII.GetString(buffer, 124, 11), 8);
             }
-            long unixTimeStamp = Convert.ToInt64(Encoding.ASCII.GetString(buffer,136,11),8);
+            long unixTimeStamp = Convert.ToInt64(Encoding.ASCII.GetString(buffer, 136, 11), 8);
             LastModification = TheEpoch.AddSeconds(unixTimeStamp);
 
-            var storedChecksum = Convert.ToInt32(Encoding.ASCII.GetString(buffer,148,6));
+            var storedChecksum = Convert.ToInt32(Encoding.ASCII.GetString(buffer, 148, 6));
             RecalculateChecksum(buffer);
             if (storedChecksum == headerChecksum)
             {
@@ -140,9 +140,9 @@ namespace tar_cs
         {
             spaces.CopyTo(buf, 148);
             headerChecksum = 0;
-            foreach(byte b in buf)
+            foreach (byte b in buf)
             {
-                if((b & 0x80) == 0x80)
+                if ((b & 0x80) == 0x80)
                 {
                     headerChecksum -= b ^ 0x80;
                 }
@@ -156,7 +156,7 @@ namespace tar_cs
         public virtual byte[] GetHeaderValue()
         {
             // Clean old values
-            Array.Clear(buffer,0, buffer.Length);
+            Array.Clear(buffer, 0, buffer.Length);
 
             if (string.IsNullOrEmpty(FileName)) throw new TarException("FileName can not be empty.");
             if (FileName.Length >= 100) throw new TarException("FileName is too long. It must be less than 100 bytes.");
@@ -169,8 +169,8 @@ namespace tar_cs
             Encoding.ASCII.GetBytes(SizeString).CopyTo(buffer, 124);
             Encoding.ASCII.GetBytes(LastModificationString).CopyTo(buffer, 136);
 
-//            buffer[156] = 20;
-            buffer[156] = ((byte) EntryType);
+            //            buffer[156] = 20;
+            buffer[156] = ((byte)EntryType);
 
 
             RecalculateChecksum(buffer);

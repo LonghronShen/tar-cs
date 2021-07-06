@@ -3,6 +3,7 @@
     <OutputType>Library</OutputType>
     <TargetFramework>netstandard20</TargetFramework>
     <LangVersion>latest</LangVersion>
+    <AssemblyName>tar_cs</AssemblyName>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
